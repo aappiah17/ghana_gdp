@@ -1,0 +1,26 @@
+{
+    "id": "6D00C32C",
+    "path": "C:/Alfred/Personal/gdp_project/R/02_charts_gdp_quarterly.R",
+    "project_path": "R/02_charts_gdp_quarterly.R",
+    "type": "r_source",
+    "hash": "0",
+    "contents": "",
+    "dirty": false,
+    "created": 1788960438487.0,
+    "source_on_save": false,
+    "relative_order": 2,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "328,0",
+        "scrollLine": "296"
+    },
+    "folds": "69|82|94|0|\n263|61|288|0|\n",
+    "lastKnownWriteTime": 1788960338,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1788960649625,
+    "read_only": false,
+    "read_only_alternatives": []
+}

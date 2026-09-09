@@ -1,0 +1,328 @@
+
+source("R/00_setup.R")
+source("R/01_data_gdp_quarterly.R")
+
+# =============================================================================
+# 1. Headline growth
+# =============================================================================
+
+headline <- gdp_all |> dplyr::filter(!is.na(growth_gdp))
+headline_last <- dplyr::slice_max(headline, date, n = 1)
+
+p_headline <- ggplot(headline, aes(date, growth_gdp)) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  geom_line(linewidth = 1.6, colour = pal$rust) +
+  geom_point(data = headline_last, size = 3.5, colour = pal$rust) +
+  geom_text(
+    data = headline_last,
+    aes(label = fmt_pct(growth_gdp)),
+    vjust = -1, fontface = "bold", size = 5, colour = pal$rust
+  ) +
+  scale_x_date(date_breaks = "3 years", labels = lab_year) +
+  scale_y_continuous(breaks = scales::pretty_breaks(5), labels = lab_pct) +
+  theme_alfred() +
+  labs(
+    x = NULL, y = "GDP growth (%)",
+    title = "Overall Real GDP Year-on-Year Growth in Ghana",
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_headline, "overall_gdp.png", width = 10, height = 6)
+
+# =============================================================================
+# 2. Contribution to overall growth, three broad sectors
+#    Bars and line are both on a value-added basis, so the bars sum to the line.
+# =============================================================================
+
+p_sector_contrib <- ggplot() +
+  geom_col(
+    data = sector_values |>
+      dplyr::filter(lubridate::year(date) >= contribution_start, !is.na(contribution)),
+    aes(date, contribution, fill = sector),
+    position = "stack"
+  ) +
+  geom_line(
+    data = total_va_growth |>
+      dplyr::filter(lubridate::year(date) >= contribution_start, !is.na(growth)),
+    aes(date, growth),
+    linewidth = 1.4, colour = pal$dark
+  ) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  scale_x_date(date_breaks = "1 year", labels = lab_year) +
+  scale_y_continuous(breaks = scales::pretty_breaks(6), labels = lab_pct) +
+  scale_fill_manual(values = sector_cols) +
+  theme_alfred() +
+  no_axis_titles() +
+  labs(
+    title = "Contribution to Overall GDP Growth by <span style='color:#7570B3;'>Agriculture</span>, <span style='color:#D95F02;'>Industry</span> and <span style='color:#1B9E77;'>Services</span> Sectors",
+    subtitle = paste0(source_note, ". The line is growth in total value added"),
+    caption = credit
+  )
+
+save_chart(p_sector_contrib, "gdp_contribution_quarter.png", width = 10, height = 6.5)
+
+# =============================================================================
+# 3. Contribution to each sector's own growth, by sub-sector
+#    One function, three charts.
+# =============================================================================
+
+plot_group_contribution <- function(group_name, start_year = contribution_start) {
+
+  bars <- subsector_contrib |>
+    dplyr::filter(group == group_name, lubridate::year(date) >= start_year)
+
+  line <- group_totals |>
+    dplyr::filter(group == group_name, lubridate::year(date) >= start_year,
+                  !is.na(total_yoy))
+
+  ggplot() +
+    geom_col(data = bars, aes(date, contribution, fill = label), position = "stack") +
+    geom_line(data = line, aes(date, total_yoy * 100),
+              linewidth = 1.4, colour = pal$dark, inherit.aes = FALSE) +
+    geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+    scale_x_date(date_breaks = "1 year", labels = lab_year) +
+    scale_y_continuous(breaks = scales::pretty_breaks(6), labels = lab_pct) +
+    scale_fill_manual(values = sector_palette(dplyr::n_distinct(bars$label))) +
+    theme_alfred() +
+    no_axis_titles() +
+    legend_top() +
+    labs(
+      title = sprintf("Contribution to %s GDP Growth by Sub-Sector", group_name),
+      subtitle = paste0(source_note, ". The line is growth in the sector as a whole"),
+      caption = credit
+    )
+}
+
+save_chart(plot_group_contribution("Industry"),    "ind_gdp_contribution_quarter.png",   width = 10, height = 6.5)
+save_chart(plot_group_contribution("Agriculture"), "agric_gdp_contribution_quarter.png", width = 10, height = 6.5)
+save_chart(plot_group_contribution("Services"),    "svc_gdp_contribution_quarter.png",   width = 11, height = 6.5)
+
+# =============================================================================
+# 4. Latest quarter: growth by sub-sector
+# =============================================================================
+
+p_growth_bar <- subsector_latest |>
+  ggplot(aes(x = forcats::fct_reorder(stringr::str_wrap(label, 40), growth_pct),
+             y = growth_pct, fill = growth_sign)) +
+  geom_chicklet(width = 0.8) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  geom_hline(yintercept = headline_growth, linetype = "dashed",
+             colour = pal$ref, linewidth = 1) +
+  geom_text(
+    aes(label = fmt_pct(growth_pct), hjust = dplyr::if_else(growth_pct > 0, 1.1, -0.1)),
+    fontface = "bold", colour = "floralwhite", size = 4.5
+  ) +
+  annotate(
+    "text", x = 1, y = headline_growth,
+    label = sprintf("Overall growth = %.1f%%", headline_growth),
+    colour = pal$ref, angle = 90, fontface = "bold",
+    hjust = 0, vjust = -0.5, size = 4
+  ) +
+  coord_flip(clip = "off") +
+  scale_fill_manual(values = c(Positive = pal$positive, Negative = pal$negative)) +
+  theme_alfred() +
+  no_axis_titles() +
+  theme(axis.text.x = element_blank()) +
+  labs(
+    title = sprintf("Real GDP Growth in %s by Sub-Sector", latest_label),
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_growth_bar, "growth_subsector_bar.png", width = 12, height = 8)
+
+# =============================================================================
+# 5. Latest quarter: contribution to overall growth by sub-sector
+#    Uses the contributions GSS publishes, which sum to the headline rate.
+# =============================================================================
+
+p_contrib_bar <- subsector_latest |>
+  ggplot(aes(x = forcats::fct_reorder(stringr::str_wrap(label, 40), contribution),
+             y = contribution, fill = contrib_sign)) +
+  geom_chicklet(width = 0.8) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  geom_text(
+    aes(label = dplyr::if_else(abs(contribution) < 0.05, NA_character_, fmt_pp(contribution)),
+        hjust = dplyr::if_else(contribution > 0, 1.1, -0.1)),
+    fontface = "bold", colour = "floralwhite", size = 4.5, na.rm = TRUE
+  ) +
+  coord_flip(clip = "off") +
+  scale_fill_manual(values = c(Positive = pal$positive, Negative = pal$negative)) +
+  theme_alfred() +
+  no_axis_titles() +
+  theme(axis.text.x = element_blank()) +
+  labs(
+    title = sprintf("Contribution to Overall GDP Growth in %s by Sub-Sector", latest_label),
+    subtitle = paste0(source_note, ". Percentage points of the ",
+                      fmt_pct(headline_growth),
+                      " headline growth rate. Net indirect taxes are not shown"),
+    caption = credit
+  )
+
+save_chart(p_contrib_bar, "contrib_subsector_bar.png", width = 12, height = 8)
+
+# =============================================================================
+# 6. Focus: oil and gas
+# =============================================================================
+
+oil <- subsector_values |>
+  dplyr::filter(sector == "oil_and_gas",
+                lubridate::year(date) >= long_series_start, !is.na(yoy))
+oil_last <- dplyr::slice_max(oil, date, n = 1)
+
+p_oil <- ggplot(oil, aes(date, yoy)) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  geom_line(linewidth = 1.6, colour = pal$rust) +
+  geom_point(data = oil_last, size = 3.5, colour = pal$rust) +
+  geom_text(data = oil_last, aes(label = fmt_pct(yoy * 100)),
+            vjust = -1, fontface = "bold", size = 5, colour = pal$rust) +
+  scale_x_date(date_breaks = "2 years", labels = lab_year) +
+  scale_y_continuous(breaks = scales::pretty_breaks(5),
+                     labels = scales::label_percent(accuracy = 1)) +
+  theme_alfred() +
+  labs(
+    x = NULL, y = "Growth (%)",
+    title = "Real GDP Growth in the Oil and Gas Sub-Sector",
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_oil, "sector_focus_oil.png", width = 10, height = 6.5)
+
+# =============================================================================
+# 7. Focus: mining and quarrying excluding oil
+# =============================================================================
+
+mining <- subsector_values |>
+  dplyr::filter(sector == "mining_excl_oil",
+                lubridate::year(date) >= focus_start, !is.na(yoy)) |>
+  dplyr::mutate(sign = dplyr::if_else(yoy >= 0, "Positive", "Negative"))
+
+p_mining <- ggplot(mining, aes(date, yoy, fill = sign)) +
+  geom_chicklet() +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  scale_x_date(date_breaks = "1 year", labels = lab_year) +
+  scale_y_continuous(labels = scales::label_percent(accuracy = 1)) +
+  scale_fill_manual(values = c(Positive = pal$positive, Negative = pal$negative)) +
+  theme_alfred() +
+  no_axis_titles() +
+  labs(
+    title = "Growth in the Mining and Quarrying Sector (excluding oil) by Quarter",
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_mining, "sector_focus_mining.png", width = 10, height = 6.5)
+
+# =============================================================================
+# 8. Focus: gold against everything else
+# =============================================================================
+
+p_gold <- gold_split |>
+  dplyr::filter(lubridate::year(date) >= focus_start) |>
+  ggplot(aes(date, contribution, fill = series)) +
+  geom_chicklet() +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  scale_x_date(date_breaks = "1 year", labels = lab_year) +
+  scale_y_continuous(breaks = scales::pretty_breaks(6)) +
+  scale_fill_manual(values = c(Gold = pal$gold, `Other sectors` = pal$positive)) +
+  theme_alfred() +
+  theme(axis.title.x = element_blank()) +
+  labs(
+    y = "GDP contribution (percentage points)",
+    title = "Contribution of <span style='color:#E3B778;'>Gold</span> v <span style='color:#008080;'>Other Sectors</span> to Overall GDP Growth",
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_gold, "sector_focus_gold.png", width = 10, height = 6.5)
+
+# =============================================================================
+# 9. Seasonally adjusted GDP since 2019 Q4
+# =============================================================================
+
+p_since_covid <- seasonal_index |>
+  dplyr::filter(series == "Overall") |>
+  ggplot(aes(date, change)) +
+  geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+  geom_line(linewidth = 1.6, colour = pal$rust) +
+  scale_x_date(date_breaks = "1 year", labels = lab_year) +
+  scale_y_continuous(breaks = scales::pretty_breaks(5), labels = scales::label_percent()) +
+  theme_alfred() +
+  labs(
+    x = NULL, y = "Change in real GDP since 2019 Q4",
+    title = "Change in Seasonally-Adjusted Real GDP Since 2019 Q4",
+    subtitle = source_note,
+    caption = credit
+  )
+
+save_chart(p_since_covid, "gdp_since_q42019.png", width = 10, height = 6.5)
+
+# ---- The same, split by sector ---------------------------------------------
+
+plot_since_covid <- function(df, palette, title, wrap = 20) {
+
+  ends <- df |> dplyr::filter(date == max(date))
+
+  ggplot(df, aes(date, change, colour = series)) +
+    geom_hline(yintercept = 0, linewidth = 1.5, colour = pal$dark) +
+    geom_line(linewidth = 1.6) +
+    geom_point(data = ends, size = 3.5, shape = 21, stroke = 2, fill = "floralwhite") +
+    ggrepel::geom_text_repel(
+      data = ends,
+      aes(label = sprintf("%s\n%.1f%%", stringr::str_wrap(series, wrap), change * 100)),
+      hjust = 0, direction = "y", nudge_x = 40, size = 5,
+      fontface = "bold", segment.alpha = 0, show.legend = FALSE
+    ) +
+    scale_x_date(date_breaks = "1 year", labels = lab_year,
+                 expand = expansion(mult = c(0.02, 0.18))) +
+    scale_y_continuous(breaks = scales::pretty_breaks(5), labels = scales::label_percent()) +
+    scale_colour_manual(values = palette) +
+    theme_alfred() +
+    labs(
+      x = NULL, y = "Change in real GDP since 2019 Q4",
+      title = title,
+      subtitle = paste0(source_note, ", seasonally adjusted GDP"),
+      caption = credit
+    )
+}
+
+sector_index_cols <- c(sector_cols, Overall = pal$rust)
+
+save_chart(
+  plot_since_covid(seasonal_index, sector_index_cols,
+                   "Change in Seasonally-Adjusted Real GDP Since 2019 Q4"),
+  "gdp_since_q42019_sec.png", width = 10.5, height = 6.5
+)
+
+industry_index_cols <- setNames(
+  sector_palette(dplyr::n_distinct(seasonal_index_industry$series)),
+  sort(unique(seasonal_index_industry$series))
+)
+
+save_chart(
+  plot_since_covid(seasonal_index_industry, industry_index_cols,
+                   "Change in Real GDP Since 2019 Q4 by Industrial Sub-Sector"),
+  "gdp_since_q42019_ind.png", width = 12, height = 6.5
+)
+
+# =============================================================================
+# 10. Current-price sectoral shares
+# =============================================================================
+
+p_shares <- sector_shares |>
+  ggplot(aes(date, share, fill = sector)) +
+  geom_col(position = "stack") +
+  scale_x_date(date_breaks = "1 year", labels = lab_year, expand = c(0, 0)) +
+  scale_y_continuous(labels = lab_pct, expand = c(0, 0)) +
+  scale_fill_manual(values = sector_cols) +
+  theme_alfred() +
+  no_axis_titles() +
+  labs(
+    title = "Share of GDP Held by <span style='color:#7570B3;'>Agriculture</span>, <span style='color:#D95F02;'>Industry</span> and <span style='color:#1B9E77;'>Services</span>",
+    subtitle = paste0(source_note, ", current prices, share of gross value added"),
+    caption = credit
+  )
+
+save_chart(p_shares, "gdp_sector_shares_quarter.png", width = 10, height = 6.5)
