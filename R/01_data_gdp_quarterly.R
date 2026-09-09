@@ -1,11 +1,27 @@
+quarter_pattern <- "^\\s*\\d{4}[ _]?Q\\s*\\d"
 
+# ---- Sheet and value helpers ------------------------------------------------
 
-quarter_to_date <- function(x) {
-  x  <- stringr::str_squish(stringr::str_remove_all(as.character(x), "\\*"))
-  yr <- as.integer(stringr::str_extract(x, "^\\d{4}"))
-  qt <- as.integer(stringr::str_match(x, "(?i)Q\\s*(\\d)")[, 2])
-  # Project convention: a quarter is dated to the first day of its closing month
-  lubridate::make_date(yr, qt * 3L, 1L)
+#' Resolve a sheet name, ignoring case, spaces, underscores and renames
+match_sheet <- function(pattern, path = gdp_paths$quarterly) {
+
+  sheets <- readxl::excel_sheets(path)
+  norm   <- function(x) stringr::str_remove_all(stringr::str_to_lower(x), "[^a-z0-9]")
+
+  hit <- which(norm(sheets) == norm(pattern))
+  if (length(hit) == 0) {
+    hit <- which(stringr::str_detect(norm(sheets), stringr::fixed(norm(pattern))))
+  }
+
+  if (length(hit) == 0) {
+    stop(sprintf("No sheet matching '%s' in %s. Sheets present: %s",
+                 pattern, basename(path), paste(sheets, collapse = ", ")), call. = FALSE)
+  }
+  if (length(hit) > 1) {
+    stop(sprintf("'%s' matches several sheets: %s. Use a longer pattern.",
+                 pattern, paste(sheets[hit], collapse = ", ")), call. = FALSE)
+  }
+  sheets[hit]
 }
 
 as_number <- function(x) {
@@ -14,37 +30,12 @@ as_number <- function(x) {
   readr::parse_number(x)
 }
 
-#' Read one quarterly sheet from the GSS workbook
-#'
-#' @param sheet Sheet name.
-#' @param cols  Column names, in order, starting with "quarter". These replace
-#'   the workbook's merged multi-row headers, which are not machine readable.
-#' @param skip  Number of header rows above the first data row.
-read_gss_quarter <- function(sheet, cols, skip = 3, path = gdp_paths$quarterly) {
-
-  raw <- readxl::read_excel(path, sheet = sheet, skip = skip, col_names = FALSE) |>
-    janitor::remove_empty(which = c("rows", "cols"))
-
-  if (ncol(raw) != length(cols)) {
-    stop(sprintf(
-      "Sheet '%s' returned %d columns but %d names were supplied. GSS has probably changed the layout: inspect the sheet and update the `cols_*` vector.",
-      sheet, ncol(raw), length(cols)
-    ), call. = FALSE)
-  }
-  names(raw) <- cols
-
-  out <- raw |>
-    # keeps data rows, drops the "*revised / **provisional" footnote row
-    dplyr::filter(stringr::str_detect(.data$quarter, "^\\s*\\d{4}")) |>
-    dplyr::mutate(
-      date = quarter_to_date(.data$quarter),
-      dplyr::across(-dplyr::all_of(c("quarter", "date")), as_number)
-    ) |>
-    dplyr::relocate(date, .after = "quarter") |>
-    dplyr::arrange(.data$date)
-
-  check_quarterly(out, sheet)
-  out
+quarter_to_date <- function(x) {
+  x  <- stringr::str_squish(stringr::str_remove_all(as.character(x), "\\*"))
+  yr <- as.integer(stringr::str_extract(x, "^\\d{4}"))
+  qt <- as.integer(stringr::str_match(x, "(?i)Q\\s*(\\d)")[, 2])
+  # Project convention: a quarter is dated to the first day of its closing month
+  lubridate::make_date(yr, qt * 3L, 1L)
 }
 
 # Guards against a silently missing quarter, which would corrupt every lag(4)
@@ -57,8 +48,85 @@ check_quarterly <- function(df, label) {
   invisible(df)
 }
 
+# ---- Reader -----------------------------------------------------------------
+
+#' Read one quarterly sheet from the GSS workbook
+#'
+#' @param sheet Sheet name, or a distinctive fragment of it.
+#' @param cols  Column names in workbook order, starting with "quarter". Pass
+#'   NULL to read without renaming, which is what gss_layout() does.
+read_gss_quarter <- function(sheet, cols, path = gdp_paths$quarterly) {
+
+  sheet_name <- match_sheet(sheet, path)
+  raw <- readxl::read_excel(path, sheet = sheet_name, col_names = FALSE)
+
+  # The quarter labels sit in whichever column holds the most year_Qn strings
+  hits <- vapply(
+    raw,
+    function(col) sum(stringr::str_detect(as.character(col), quarter_pattern), na.rm = TRUE),
+    integer(1)
+  )
+  if (max(hits) == 0) {
+    stop(sprintf("No quarter labels (for example 2026_Q2) found on sheet '%s'.", sheet_name),
+         call. = FALSE)
+  }
+  label_col <- names(raw)[which.max(hits)]
+
+  is_data <- stringr::str_detect(as.character(raw[[label_col]]), quarter_pattern)
+  is_data[is.na(is_data)] <- FALSE
+  first_data <- which(is_data)[1]
+
+  df <- raw[is_data, , drop = FALSE] |>
+    dplyr::relocate(dplyr::all_of(label_col)) |>
+    janitor::remove_empty(which = "cols")
+
+  # The row directly above the data block is the usable part of the header
+  headers <- if (first_data > 1) {
+    stringr::str_squish(as.character(unlist(raw[first_data - 1, names(df)], use.names = FALSE)))
+  } else {
+    rep(NA_character_, ncol(df))
+  }
+
+  if (is.null(cols)) {
+    cols <- c("quarter", paste0("v", seq_len(ncol(df) - 1)))
+  } else if (ncol(df) != length(cols)) {
+    stop(sprintf(
+      "Sheet '%s' has %d columns but %d names were supplied. Run gss_layout('%s') to see the current layout, then update the cols_* vector.",
+      sheet_name, ncol(df), length(cols), sheet
+    ), call. = FALSE)
+  }
+  names(df) <- cols
+
+  out <- df |>
+    dplyr::mutate(
+      date = quarter_to_date(.data$quarter),
+      dplyr::across(-dplyr::all_of(c("quarter", "date")), as_number)
+    ) |>
+    dplyr::relocate(date, .after = "quarter") |>
+    dplyr::arrange(.data$date)
+
+  attr(out, "sheet")   <- sheet_name
+  attr(out, "headers") <- headers
+  check_quarterly(out, sheet_name)
+  out
+}
+
+#' Show what the workbook currently holds in each column position.
+#' Run this first whenever a read fails after a new GSS release.
+gss_layout <- function(sheet, cols = NULL, path = gdp_paths$quarterly) {
+  df <- read_gss_quarter(sheet, cols = NULL, path = path)
+  n  <- ncol(df) - 1L                       # the reader inserts `date` in position 2
+  tibble::tibble(
+    position        = seq_len(n),
+    workbook_header = attr(df, "headers"),
+    assigned_name   = if (is.null(cols)) NA_character_ else cols[seq_len(n)],
+    first_value     = as.character(unlist(df[1, -2], use.names = FALSE))
+  )
+}
+
 # ---- Column layouts ---------------------------------------------------------
 # Positional, in workbook order, after empty columns are dropped.
+# Verified against the release covering 2006 Q1 to 2026 Q2.
 
 cols_constant_all <- c(
   "quarter",
@@ -103,17 +171,19 @@ cols_current_all <- c(
   "share_informal"
 )
 
+# Watch the tail of this sheet: the overall growth column now sits AHEAD of the
+# cocoa, oil and gold memo items, and a non-oil contribution column was added.
 cols_contribution <- c(
   "quarter",
-  "crops", "livestock", "forestry_and_logging", "fishing",
+  "crops_and_cocoa", "livestock", "forestry_and_logging", "fishing",
   "mining_and_quarrying", "manufacturing", "electricity", "water_and_sewerage",
   "construction", "trade_and_repairs", "accommodation_and_food",
   "transport_and_storage", "information_and_communication",
   "financial_and_insurance", "real_estate", "professional_and_support",
   "public_administration", "education", "health_and_social_work",
   "other_personal_services", "net_indirect_taxes",
-  "agriculture", "industry", "services",
-  "cocoa", "oil_and_gas", "gold", "total"
+  "agriculture", "industry", "services", "total",
+  "cocoa", "oil_and_gas", "gold", "non_oil_contribution"
 )
 
 # Display labels, applied once here so no chart hard-codes a rename
@@ -145,23 +215,25 @@ sector_labels <- c(
 subsector_keys <- names(sector_labels)
 
 # ---- Read -------------------------------------------------------------------
+# Sheet names are fragments, matched case and punctuation insensitively, so the
+# same call works across the old lower case names and the current title case.
 
-gdp_all           <- read_gss_quarter("constant gdp_all",            cols_constant_all)
-agric_values      <- read_gss_quarter("constant gdp_Agric",          cols_agric)
-industry_values   <- read_gss_quarter("constant gdp  industry",      cols_industry)
-services_values   <- read_gss_quarter("constant gpd  services",      cols_services)
-seasonal_all      <- read_gss_quarter("seasonal adjusted gdp All",   cols_seasonal_all)
-seasonal_industry <- read_gss_quarter("seasonal adjusted industry",  cols_seasonal_industry)
-current_all       <- read_gss_quarter("current gdp_all",             cols_current_all)
-contribution_all  <- read_gss_quarter("contribution to growth rate", cols_contribution, skip = 2)
+gdp_all           <- read_gss_quarter("Constant GDP All",           cols_constant_all)
+agric_values      <- read_gss_quarter("Constant GDP Agric",         cols_agric)
+industry_values   <- read_gss_quarter("Constant GDP Industry",      cols_industry)
+services_values   <- read_gss_quarter("Constant GDP Services",      cols_services)
+seasonal_all      <- read_gss_quarter("Seasonal Adjusted GDP All",  cols_seasonal_all)
+seasonal_industry <- read_gss_quarter("Seasonal Adjusted Industry", cols_seasonal_industry)
+current_all       <- read_gss_quarter("Current GDP All",            cols_current_all)
+contribution_all  <- read_gss_quarter("Contribution to Growth",     cols_contribution)
 
 # ---- Reconciliation ---------------------------------------------------------
 # The 21 published components should sum to the published headline growth rate,
-# and that rate should match the growth column on the constant price sheet.
-# If either check fails, a column mapping above is wrong.
+# and that rate should match the growth column on the constant price sheet. If
+# either check fails, a column mapping above is stale.
 
 contrib_parts <- c(
-  "crops", "livestock", "forestry_and_logging", "fishing",
+  "crops_and_cocoa", "livestock", "forestry_and_logging", "fishing",
   "mining_and_quarrying", "manufacturing", "electricity", "water_and_sewerage",
   "construction", "trade_and_repairs", "accommodation_and_food",
   "transport_and_storage", "information_and_communication",
@@ -181,12 +253,26 @@ local({
     dplyr::filter(abs(published - growth_gdp) > 0.05)
 
   if (nrow(parts_gap) > 0) {
-    warning(sprintf("Published contributions do not sum to headline growth in %d quarter(s), first: %s.",
+    warning(sprintf("Published contributions do not sum to headline growth in %d quarter(s), first: %s. Check cols_contribution against gss_layout('Contribution to Growth').",
                     nrow(parts_gap), format(parts_gap$date[1])), call. = FALSE)
   }
   if (nrow(headline_gap) > 0) {
     warning(sprintf("Published contributions total disagrees with the constant price growth column in %d quarter(s), first: %s.",
                     nrow(headline_gap), format(headline_gap$date[1])), call. = FALSE)
+  }
+
+  # The 2026 Q2 release carries a bad current price informal value: the level
+  # falls from 113,249 to 26,515 and the published share from 26.9% to 7.1%.
+  # Anything using current_all$informal or share_informal should be treated with
+  # care until GSS corrects it.
+  informal_jump <- current_all |>
+    dplyr::arrange(date) |>
+    dplyr::mutate(step = share_informal - dplyr::lag(share_informal)) |>
+    dplyr::filter(abs(step) > 10)
+
+  if (nrow(informal_jump) > 0) {
+    warning(sprintf("The current price informal share moves by more than 10 points in %d quarter(s), first: %s. Check the workbook before using that column.",
+                    nrow(informal_jump), format(informal_jump$date[1])), call. = FALSE)
   }
 })
 
@@ -268,7 +354,7 @@ total_va_growth <- gdp_all |>
 
 contrib_subsector <- contribution_all |>
   dplyr::mutate(
-    crops_excl_cocoa = crops - cocoa,
+    crops_excl_cocoa = crops_and_cocoa - cocoa,
     mining_excl_oil  = mining_and_quarrying - oil_and_gas
   ) |>
   dplyr::select(quarter, date, dplyr::all_of(subsector_keys)) |>
@@ -303,9 +389,9 @@ subsector_latest <- subsector_values |>
     by = "sector"
   ) |>
   dplyr::mutate(
-    growth_pct     = yoy * 100,
-    growth_sign    = dplyr::if_else(growth_pct >= 0, "Positive", "Negative"),
-    contrib_sign   = dplyr::if_else(contribution >= 0, "Positive", "Negative")
+    growth_pct   = yoy * 100,
+    growth_sign  = dplyr::if_else(growth_pct >= 0, "Positive", "Negative"),
+    contrib_sign = dplyr::if_else(contribution >= 0, "Positive", "Negative")
   )
 
 # ---- Seasonally adjusted, indexed to 2019 Q4 --------------------------------

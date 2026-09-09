@@ -1,3 +1,8 @@
+# =============================================================================
+# 00_setup.R  |  Ghana quarterly GDP charts: packages, configuration, house style
+# Source this once per session, before 01_data_gdp_quarterly.R
+# =============================================================================
+
 library(tidyverse)
 library(readxl)
 library(janitor)
@@ -7,6 +12,8 @@ library(ggchicklet)
 library(ggrepel)
 library(RColorBrewer)
 
+# ---- Configuration ----------------------------------------------------------
+# Everything that changes between vintages or machines lives here.
 
 gdp_paths <- list(
   quarterly = "data/gdp_raw.xlsx"
@@ -16,16 +23,23 @@ chart_dir <- "Charts"
 chart_dpi <- 200
 
 # Windows used by the charts
-contribution_start <- 2018            
-focus_start        <- 2022            
-long_series_start  <- 2013        
-shares_start       <- 2015            
-covid_base         <- as.Date("2019-12-01")   
+contribution_start <- 2018            # stacked contribution charts start here
+focus_start        <- 2022            # single sub-sector focus charts start here
+long_series_start  <- 2013            # oil and gas series starts here
+shares_start       <- 2015            # sectoral share chart starts here
+covid_base         <- as.Date("2019-12-01")   # 2019 Q4, base for the "since Covid" charts
+
+# Extra charts (03)
+trend_window       <- c(2015, 2019)           # years used to fit the pre-pandemic trend
+momentum_quarters  <- 12                      # quarters shown on the quarter-on-quarter chart
+index_base         <- as.Date("2013-12-01")   # 2013 Q4 = 100 on the sub-sector index chart
+index_focus <- c("manufacturing", "construction", "information_and_communication",
+                 "mining_excl_oil", "crops_excl_cocoa")
 
 source_note <- "Data: Ghana Statistical Service"
 credit      <- "Chart: alfredappiah.com"
 
-# ----  palette ----------------------------------------------------------
+# ---- House palette ----------------------------------------------------------
 
 pal <- list(
   rust     = "#A9432C",
