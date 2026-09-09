@@ -17,78 +17,71 @@ The previews below point at `./Charts/GDP/`, which is where `save_chart()` write
 They appear once the script has run, so if you change `chart_dir` the paths here
 need the same change.
 
-## The standing set
 
-Fourteen charts, refreshed each quarter.
 
 ### Headline growth
 
-Year-on-year growth in real GDP at purchasers' value, taken straight from the
-published growth column. The last point is labelled.
+Year-on-year growth in real GDP at purchasers' value.
 
-![overall_gdp](./Charts/GDP/overall_gdp.png)
+![overall_gdp](./Charts/overall_gdp.png)
 
 ### Contribution to growth
 
 Agriculture, industry and services as percentage points of growth, with total
-value added growth as the line. The bars sum to the line because both sit on a
-value added basis.
+value added growth as the line. 
 
-![gdp_contribution_quarter](./Charts/GDP/gdp_contribution_quarter.png)
+![gdp_contribution_quarter](./Charts/gdp_contribution_quarter.png)
 
 The same idea inside each sector, where the denominator is the sector's own total
 rather than GDP.
 
-![ind_gdp_contribution_quarter](./Charts/GDP/ind_gdp_contribution_quarter.png)
+![ind_gdp_contribution_quarter](./Charts/ind_gdp_contribution_quarter.png)
 
-![agric_gdp_contribution_quarter](./Charts/GDP/agric_gdp_contribution_quarter.png)
+![agric_gdp_contribution_quarter](./Charts/agric_gdp_contribution_quarter.png)
 
-![svc_gdp_contribution_quarter](./Charts/GDP/svc_gdp_contribution_quarter.png)
+![svc_gdp_contribution_quarter](./Charts/svc_gdp_contribution_quarter.png)
 
 Current price sectoral shares, stacked.
 
-![gdp_sector_shares_quarter](./Charts/GDP/gdp_sector_shares_quarter.png)
+![gdp_sector_shares_quarter](./Charts/gdp_sector_shares_quarter.png)
 
 ### The latest quarter
 
 Growth by sub-sector, ranked, with the headline rate as a dashed reference.
 
-![growth_subsector_bar](./Charts/GDP/growth_subsector_bar.png)
+![growth_subsector_bar](./Charts/growth_subsector_bar.png)
 
 The same sub-sectors as percentage points of overall growth, using the
 contributions GSS publishes.
 
-![contrib_subsector_bar](./Charts/GDP/contrib_subsector_bar.png)
+![contrib_subsector_bar](./Charts/contrib_subsector_bar.png)
 
 ### Sectors in focus
 
 Oil and gas growth.
 
-![sector_focus_oil](./Charts/GDP/sector_focus_oil.png)
+![sector_focus_oil](./Charts/sector_focus_oil.png)
 
 Mining excluding oil, by quarter.
 
-![sector_focus_mining](./Charts/GDP/sector_focus_mining.png)
+![sector_focus_mining](./Charts/sector_focus_mining.png)
 
 Gold against everything else.
 
-![sector_focus_gold](./Charts/GDP/sector_focus_gold.png)
+![sector_focus_gold](./Charts/sector_focus_gold.png)
 
 ### Since 2019 Q4
 
 Seasonally adjusted GDP indexed to the pre-Covid quarter, overall and then split
 by sector and by industrial sub-sector.
 
-![gdp_since_q42019](./Charts/GDP/gdp_since_q42019.png)
+![gdp_since_q42019](./Charts/gdp_since_q42019.png)
 
-![gdp_since_q42019_sec](./Charts/GDP/gdp_since_q42019_sec.png)
+![gdp_since_q42019_sec](./Charts/gdp_since_q42019_sec.png)
 
-![gdp_since_q42019_ind](./Charts/GDP/gdp_since_q42019_ind.png)
+![gdp_since_q42019_ind](./Charts/gdp_since_q42019_ind.png)
 
 ## Additional charts
-
-Built when a piece needs them. Momentum, breadth and the trend gap arguably belong
-in the standing set.
 
 Quarter-on-quarter growth, seasonally adjusted, last twelve quarters. The series a
 technical recession is defined on.
